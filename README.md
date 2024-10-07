@@ -1,5 +1,7 @@
 # Celmon
 
+![Celery Monitor Logs](https://github.com/hold7door/celmon/blob/master/celmon.jpeg)
+
 This project implements a monitoring system for Celery using Prometheus and Grafana. It tracks worker and task metrics, providing insights into your Celery cluster's performance.
 
 ## Components
