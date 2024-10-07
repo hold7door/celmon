@@ -1,4 +1,4 @@
-# Celery Monitoring System
+# Celmon
 
 This project implements a monitoring system for Celery using Prometheus and Grafana. It tracks worker and task metrics, providing insights into your Celery cluster's performance.
 
@@ -68,4 +68,3 @@ This will stop and remove all the containers created by Docker Compose.
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for more details.
-    
