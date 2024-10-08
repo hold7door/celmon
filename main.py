@@ -1,9 +1,12 @@
 import time
+import json
 from celery import Celery
 from celery.events import EventReceiver
 from celery.events.state import State
 from collections import defaultdict
 from prometheus_client import start_http_server, Gauge, Counter
+import redis
+import os
 
 app = Celery('tasks')
 app.config_from_object('celeryconfig')  # Assuming you have a celeryconfig.py file
@@ -11,8 +14,10 @@ app.config_from_object('celeryconfig')  # Assuming you have a celeryconfig.py fi
 class CeleryMonitor:
     def __init__(self):
         self.state = State()
-        self.workers = defaultdict(lambda: {'active_tasks': 0, 'completed_tasks': 0, 'prefetched_tasks': 0, 'status': 'unknown'})
-        self.tasks = defaultdict(lambda: {'total': 0, 'success': 0, 'failure': 0, 'durations': []})
+        persistence_url = os.environ.get('CELERY_PERSISTENCE_URL', 'redis://redis:6379/1')
+        self.redis_client = redis.Redis.from_url(persistence_url)
+        self.workers = self.load_state('workers', lambda: defaultdict(lambda: {'active_tasks': 0, 'completed_tasks': 0, 'prefetched_tasks': 0, 'status': 'unknown'}))
+        self.tasks = self.load_state('tasks', lambda: defaultdict(lambda: {'total': 0, 'success': 0, 'failure': 0, 'durations': []}))
 
         # Prometheus metrics
         self.worker_active_tasks = Gauge('celery_worker_active_tasks', 'Number of active tasks per worker', ['worker'])
@@ -24,6 +29,32 @@ class CeleryMonitor:
         self.task_failure = Counter('celery_task_failure', 'Number of failed tasks', ['task'])
         self.task_duration = Gauge('celery_task_duration', 'Task duration in seconds', ['task'])
 
+        self.restore_metrics()
+
+    def load_state(self, key, default_factory):
+        state_json = self.redis_client.get(key)
+        if state_json:
+            return json.loads(state_json)
+        return default_factory()
+
+    def save_state(self):
+        self.redis_client.set('workers', json.dumps(self.workers))
+        self.redis_client.set('tasks', json.dumps(self.tasks))
+
+    def restore_metrics(self):
+        for worker, stats in self.workers.items():
+            self.worker_active_tasks.labels(worker=worker).set(stats['active_tasks'])
+            self.worker_completed_tasks.labels(worker=worker)._value.set(stats['completed_tasks'])
+            self.worker_prefetched_tasks.labels(worker=worker).set(stats['prefetched_tasks'])
+            self.worker_status.labels(worker=worker).set(1 if stats['status'] == 'online' else 0)
+
+        for task, stats in self.tasks.items():
+            self.task_total.labels(task=task)._value.set(stats['total'])
+            self.task_success.labels(task=task)._value.set(stats['success'])
+            self.task_failure.labels(task=task)._value.set(stats['failure'])
+            if stats['durations']:
+                self.task_duration.labels(task=task).set(sum(stats['durations']) / len(stats['durations']))
+
     def __call__(self, event):
         self.state.event(event)
         event_type = event['type']
@@ -32,6 +63,8 @@ class CeleryMonitor:
             self.handle_task_event(event)
         elif event_type.startswith('worker-'):
             self.handle_worker_event(event)
+
+        self.save_state()
 
     def handle_task_event(self, event):
         task_id = event['uuid']
@@ -99,6 +132,7 @@ def monitor_celery():
             print("Stopping Celery monitor...")
         finally:
             monitor.print_stats()
+            monitor.save_state()
 
 if __name__ == '__main__':
     monitor_celery()

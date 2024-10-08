@@ -9,9 +9,12 @@ services:
       - redis
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_PERSISTENCE_URL=redis://redis:6379/1
 
   redis:
     image: "redis:alpine"
+    volumes:
+      - redis-data:/data
 
   prometheus:
     image: prom/prometheus:v2.30.3
@@ -28,4 +31,5 @@ services:
       - grafana-storage:/var/lib/grafana
 
 volumes:
+  redis-data:
   grafana-storage:
