@@ -726,6 +726,174 @@
         "align": false,
         "alignLevel": null
       }
+    },
+    {
+      "title": "Completed Tasks per Worker (per minute)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(celery_worker_completed_tasks_histogram_bucket{le=\"60\"}[1m])",
+          "legendFormat": "{{worker}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/minute"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Completed Tasks per Worker (per hour)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(celery_worker_completed_tasks_histogram_bucket{le=\"3600\"}[1h])",
+          "legendFormat": "{{worker}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/hour"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Total Tasks (per minute)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_total_histogram_bucket{le=\"60\"}[1m])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/minute"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Total Tasks (per hour)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_total_histogram_bucket{le=\"3600\"}[1h])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/hour"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Successful Tasks (per minute)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_success_histogram_bucket{le=\"60\"}[1m])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/minute"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Successful Tasks (per hour)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_success_histogram_bucket{le=\"3600\"}[1h])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/hour"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Failed Tasks (per minute)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_failure_histogram_bucket{le=\"60\"}[1m])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/minute"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
+    },
+    {
+      "title": "Failed Tasks (per hour)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_failure_histogram_bucket{le=\"3600\"}[1h])) by (task)",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Tasks/hour"
+        },
+        {
+          "format": "short",
+          "show": false
+        }
+      ]
     }
   ],
   "refresh": "5s",

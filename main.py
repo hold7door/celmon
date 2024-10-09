@@ -4,7 +4,7 @@ from celery import Celery
 from celery.events import EventReceiver
 from celery.events.state import State
 from collections import defaultdict
-from prometheus_client import start_http_server, Gauge, Counter
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
 import redis
 import os
 import logging
@@ -33,6 +33,32 @@ class CeleryMonitor:
         self.task_success = Counter('celery_task_success', 'Number of successful tasks', ['task'])
         self.task_failure = Counter('celery_task_failure', 'Number of failed tasks', ['task'])
         self.task_duration = Gauge('celery_task_duration', 'Task duration in seconds', ['task'])
+
+        # New Histogram metrics
+        self.worker_completed_tasks_histogram = Histogram(
+            'celery_worker_completed_tasks_histogram',
+            'Number of completed tasks per worker over time',
+            ['worker'],
+            buckets=[60, 3600, float("inf")]  # 1 minute, 1 hour, and infinite buckets
+        )
+        self.task_total_histogram = Histogram(
+            'celery_task_total_histogram',
+            'Total number of tasks over time',
+            ['task'],
+            buckets=[60, 3600, float("inf")]
+        )
+        self.task_success_histogram = Histogram(
+            'celery_task_success_histogram',
+            'Number of successful tasks over time',
+            ['task'],
+            buckets=[60, 3600, float("inf")]
+        )
+        self.task_failure_histogram = Histogram(
+            'celery_task_failure_histogram',
+            'Number of failed tasks over time',
+            ['task'],
+            buckets=[60, 3600, float("inf")]
+        )
 
         self.restore_metrics()
 
@@ -87,6 +113,7 @@ class CeleryMonitor:
             self.tasks[task_name]['total'] += 1
             self.worker_active_tasks.labels(worker=worker).inc()
             self.task_total.labels(task=task_name).inc()
+            self.task_total_histogram.labels(task=task_name).observe(time.time())
         elif event['type'] == 'task-started':
             # TODO: what needs to done here?
             pass
@@ -97,7 +124,9 @@ class CeleryMonitor:
             self.tasks[task_name]['durations'].append(event['runtime'])
             self.worker_active_tasks.labels(worker=worker).dec()
             self.worker_completed_tasks.labels(worker=worker).inc()
+            self.worker_completed_tasks_histogram.labels(worker=worker).observe(time.time())
             self.task_success.labels(task=task_name).inc()
+            self.task_success_histogram.labels(task=task_name).observe(time.time())
             self.task_duration.labels(task=task_name).set(event['runtime'])
         elif event['type'] == 'task-failed':
             self.workers[worker]['active_tasks'] -= 1
@@ -105,7 +134,9 @@ class CeleryMonitor:
             self.tasks[task_name]['failure'] += 1
             self.worker_active_tasks.labels(worker=worker).dec()
             self.worker_completed_tasks.labels(worker=worker).inc()
+            self.worker_completed_tasks_histogram.labels(worker=worker).observe(time.time())
             self.task_failure.labels(task=task_name).inc()
+            self.task_failure_histogram.labels(task=task_name).observe(time.time())
 
     def handle_worker_event(self, event):
         worker = event['hostname']
