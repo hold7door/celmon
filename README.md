@@ -38,7 +38,7 @@ This project implements a monitoring system for Celery using Prometheus and Graf
    ```
 
 3. Access the services:
-   - Celery Monitor: http://localhost:8000
+   - Celery Monitor: http://localhost:8099
    - Prometheus: http://localhost:9090
    - Grafana: http://localhost:3000
 
@@ -51,7 +51,7 @@ This project implements a monitoring system for Celery using Prometheus and Graf
 
 ## Monitoring
 
-- The Celery Monitor exposes metrics at http://localhost:8000
+- The Celery Monitor exposes metrics at http://localhost:8099
 - Prometheus scrapes these metrics and stores them
 - Grafana visualizes the data from Prometheus
 
