@@ -7,17 +7,22 @@ from collections import defaultdict
 from prometheus_client import start_http_server, Gauge, Counter
 import redis
 import os
+import logging
 
-app = Celery('tasks')
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+app = Celery('salarybox_backend')
 app.config_from_object('celeryconfig')  # Assuming you have a celeryconfig.py file
 
 class CeleryMonitor:
     def __init__(self):
         self.state = State()
-        persistence_url = os.environ.get('CELERY_PERSISTENCE_URL', 'redis://redis:6379/1')
+        persistence_url = os.environ.get('CELERY_PERSISTENCE_URL', "redis://localhost:6379")
         self.redis_client = redis.Redis.from_url(persistence_url)
-        self.workers = self.load_state('workers', lambda: defaultdict(lambda: {'active_tasks': 0, 'completed_tasks': 0, 'prefetched_tasks': 0, 'status': 'unknown'}))
-        self.tasks = self.load_state('tasks', lambda: defaultdict(lambda: {'total': 0, 'success': 0, 'failure': 0, 'durations': []}))
+        self.workers = self.load_state('workers', lambda data: defaultdict(lambda: {'active_tasks': 0, 'completed_tasks': 0, 'prefetched_tasks': 0, 'status': 'unknown'}, data))
+        self.tasks = self.load_state('tasks', lambda data: defaultdict(lambda: {'total': 0, 'success': 0, 'failure': 0, 'durations': []}, data))
+        self.tasks_id_to_name = self.load_state('tasks_id_to_name', lambda data: defaultdict(lambda: 'unknown', data))
 
         # Prometheus metrics
         self.worker_active_tasks = Gauge('celery_worker_active_tasks', 'Number of active tasks per worker', ['worker'])
@@ -31,15 +36,18 @@ class CeleryMonitor:
 
         self.restore_metrics()
 
+        logger.info("Monitor initialized")
+
     def load_state(self, key, default_factory):
         state_json = self.redis_client.get(key)
         if state_json:
-            return json.loads(state_json)
-        return default_factory()
+            return default_factory(json.loads(state_json))
+        return default_factory({})
 
     def save_state(self):
         self.redis_client.set('workers', json.dumps(self.workers))
         self.redis_client.set('tasks', json.dumps(self.tasks))
+        self.redis_client.set('tasks_id_to_name', json.dumps(self.tasks_id_to_name))
 
     def restore_metrics(self):
         for worker, stats in self.workers.items():
@@ -68,14 +76,20 @@ class CeleryMonitor:
 
     def handle_task_event(self, event):
         task_id = event['uuid']
-        task_name = event.get('name', 'unknown')
+        task_name = event.get('name', self.tasks_id_to_name[task_id])
         worker = event['hostname']
+
+        logger.info(f"handling task: {task_id}, {task_name}, {event['type']}, {self.tasks_id_to_name}")
 
         if event['type'] == 'task-received':
             self.workers[worker]['active_tasks'] += 1
+            self.tasks_id_to_name[task_id] = task_name
             self.tasks[task_name]['total'] += 1
             self.worker_active_tasks.labels(worker=worker).inc()
             self.task_total.labels(task=task_name).inc()
+        elif event['type'] == 'task-started':
+            # TODO: what needs to done here?
+            pass
         elif event['type'] == 'task-succeeded':
             self.workers[worker]['active_tasks'] -= 1
             self.workers[worker]['completed_tasks'] += 1
@@ -96,11 +110,11 @@ class CeleryMonitor:
     def handle_worker_event(self, event):
         worker = event['hostname']
         if event['type'] == 'worker-online':
-            print(f"Worker {worker} is online")
+            logger.info(f"Worker {worker} is online")
             self.workers[worker]['status'] = 'online'
             self.worker_status.labels(worker=worker).set(1)
         elif event['type'] == 'worker-offline':
-            print(f"Worker {worker} went offline")
+            logger.info(f"Worker {worker} went offline")
             self.workers[worker]['status'] = 'offline'
             self.worker_status.labels(worker=worker).set(0)
         elif event['type'] == 'worker-heartbeat':
@@ -108,31 +122,33 @@ class CeleryMonitor:
             self.worker_prefetched_tasks.labels(worker=worker).set(self.workers[worker]['prefetched_tasks'])
 
     def print_stats(self):
-        print("\nWorker Stats:")
+        logger.info("\nWorker Stats:")
         for worker, stats in self.workers.items():
-            print(f"{worker}: Active Tasks: {stats['active_tasks']}, Completed Tasks: {stats['completed_tasks']}, Prefetched Tasks: {stats['prefetched_tasks']}, Status: {stats['status']}")
+            logger.info(f"{worker}: Active Tasks: {stats['active_tasks']}, Completed Tasks: {stats['completed_tasks']}, Prefetched Tasks: {stats['prefetched_tasks']}, Status: {stats['status']}")
 
-        print("\nTask Stats:")
+        logger.info("\nTask Stats:")
         for task, stats in self.tasks.items():
             success_rate = (stats['success'] / stats['total']) * 100 if stats['total'] > 0 else 0
             avg_duration = sum(stats['durations']) / len(stats['durations']) if stats['durations'] else 0
-            print(f"{task}: Total: {stats['total']}, Success Rate: {success_rate:.2f}%, Avg Duration: {avg_duration:.2f}s")
+            logger.info(f"{task}: Total: {stats['total']}, Success Rate: {success_rate:.2f}%, Avg Duration: {avg_duration:.2f}s")
 
 def monitor_celery():
-    start_http_server(8000)  # Start Prometheus metrics server
+    start_http_server(8099)  # Start Prometheus metrics server
+    logger.info("Started prometheus metrics server on port 8099")
     monitor = CeleryMonitor()
     with app.connection() as connection:
+        logger.info("Connection established with redis broker")
         recv = EventReceiver(connection, handlers={
             '*': monitor,
         })
-        print("Starting Celery monitor...")
         try:
             recv.capture(limit=None, timeout=None, wakeup=True)
         except KeyboardInterrupt:
-            print("Stopping Celery monitor...")
+            logger.info("Stopping Celery monitor...")
         finally:
             monitor.print_stats()
             monitor.save_state()
 
 if __name__ == '__main__':
+    logger.info(f"Starting celmon...")
     monitor_celery()

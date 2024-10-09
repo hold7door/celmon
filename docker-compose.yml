@@ -4,12 +4,15 @@ services:
   celery_monitor:
     build: .
     ports:
-      - "8000:8000"
+      - "8099:8099"
     depends_on:
       - redis
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://host.docker.internal:6379
       - CELERY_PERSISTENCE_URL=redis://redis:6379/1
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   redis:
     image: "redis:alpine"
@@ -27,6 +30,7 @@ services:
     image: grafana/grafana:8.2.2
     ports:
       - "3000:3000"
+    network_mode: "host"  # Use host network
     volumes:
       - grafana-storage:/var/lib/grafana
 
