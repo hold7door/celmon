@@ -25,40 +25,15 @@ class CeleryMonitor:
         self.tasks_id_to_name = self.load_state('tasks_id_to_name', lambda data: defaultdict(lambda: 'unknown', data))
 
         # Prometheus metrics
-        self.worker_active_tasks = Gauge('celery_worker_active_tasks', 'Number of active tasks per worker', ['worker'])
+        # TODO:
+        # self.worker_active_tasks = Gauge('celery_worker_active_tasks', 'Number of active tasks per worker', ['worker'])
         self.worker_completed_tasks = Counter('celery_worker_completed_tasks', 'Number of completed tasks per worker', ['worker'])
         self.worker_prefetched_tasks = Gauge('celery_worker_prefetched_tasks', 'Number of prefetched tasks per worker', ['worker'])
         self.worker_status = Gauge('celery_worker_status', 'Status of the worker (1 for online, 0 for offline)', ['worker'])
         self.task_total = Counter('celery_task_total', 'Total number of tasks', ['task'])
         self.task_success = Counter('celery_task_success', 'Number of successful tasks', ['task'])
         self.task_failure = Counter('celery_task_failure', 'Number of failed tasks', ['task'])
-        self.task_duration = Gauge('celery_task_duration', 'Task duration in seconds', ['task'])
-
-        # New Histogram metrics
-        self.worker_completed_tasks_histogram = Histogram(
-            'celery_worker_completed_tasks_histogram',
-            'Number of completed tasks per worker over time',
-            ['worker'],
-            buckets=[60, 3600, float("inf")]  # 1 minute, 1 hour, and infinite buckets
-        )
-        self.task_total_histogram = Histogram(
-            'celery_task_total_histogram',
-            'Total number of tasks over time',
-            ['task'],
-            buckets=[60, 3600, float("inf")]
-        )
-        self.task_success_histogram = Histogram(
-            'celery_task_success_histogram',
-            'Number of successful tasks over time',
-            ['task'],
-            buckets=[60, 3600, float("inf")]
-        )
-        self.task_failure_histogram = Histogram(
-            'celery_task_failure_histogram',
-            'Number of failed tasks over time',
-            ['task'],
-            buckets=[60, 3600, float("inf")]
-        )
+        self.per_task_duration = Histogram('celery_task_duration_per_task', 'Per task duration in seconds', ['task'])
 
         self.restore_metrics()
 
@@ -77,7 +52,7 @@ class CeleryMonitor:
 
     def restore_metrics(self):
         for worker, stats in self.workers.items():
-            self.worker_active_tasks.labels(worker=worker).set(stats['active_tasks'])
+            # self.worker_active_tasks.labels(worker=worker).set(stats['active_tasks'])
             self.worker_completed_tasks.labels(worker=worker)._value.set(stats['completed_tasks'])
             self.worker_prefetched_tasks.labels(worker=worker).set(stats['prefetched_tasks'])
             self.worker_status.labels(worker=worker).set(1 if stats['status'] == 'online' else 0)
@@ -86,8 +61,6 @@ class CeleryMonitor:
             self.task_total.labels(task=task)._value.set(stats['total'])
             self.task_success.labels(task=task)._value.set(stats['success'])
             self.task_failure.labels(task=task)._value.set(stats['failure'])
-            if stats['durations']:
-                self.task_duration.labels(task=task).set(sum(stats['durations']) / len(stats['durations']))
 
     def __call__(self, event):
         self.state.event(event)
@@ -111,9 +84,8 @@ class CeleryMonitor:
             self.workers[worker]['active_tasks'] += 1
             self.tasks_id_to_name[task_id] = task_name
             self.tasks[task_name]['total'] += 1
-            self.worker_active_tasks.labels(worker=worker).inc()
+            # self.worker_active_tasks.labels(worker=worker).inc()
             self.task_total.labels(task=task_name).inc()
-            self.task_total_histogram.labels(task=task_name).observe(time.time())
         elif event['type'] == 'task-started':
             # TODO: what needs to done here?
             pass
@@ -122,21 +94,17 @@ class CeleryMonitor:
             self.workers[worker]['completed_tasks'] += 1
             self.tasks[task_name]['success'] += 1
             self.tasks[task_name]['durations'].append(event['runtime'])
-            self.worker_active_tasks.labels(worker=worker).dec()
+            # self.worker_active_tasks.labels(worker=worker).dec()
             self.worker_completed_tasks.labels(worker=worker).inc()
-            self.worker_completed_tasks_histogram.labels(worker=worker).observe(time.time())
             self.task_success.labels(task=task_name).inc()
-            self.task_success_histogram.labels(task=task_name).observe(time.time())
-            self.task_duration.labels(task=task_name).set(event['runtime'])
+            self.per_task_duration.labels(task=task_name).observe(event['runtime'])
         elif event['type'] == 'task-failed':
             self.workers[worker]['active_tasks'] -= 1
             self.workers[worker]['completed_tasks'] += 1
             self.tasks[task_name]['failure'] += 1
-            self.worker_active_tasks.labels(worker=worker).dec()
+            # self.worker_active_tasks.labels(worker=worker).dec()
             self.worker_completed_tasks.labels(worker=worker).inc()
-            self.worker_completed_tasks_histogram.labels(worker=worker).observe(time.time())
             self.task_failure.labels(task=task_name).inc()
-            self.task_failure_histogram.labels(task=task_name).observe(time.time())
 
     def handle_worker_event(self, event):
         worker = event['hostname']
